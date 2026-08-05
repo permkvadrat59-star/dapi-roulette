@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0e">
+<title>DAPI · Рулетка</title>
+<meta name="description" content="Рулетка призов от DAPI Team — крути раз в 24 часа, забирай приз.">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="phone-shell">
+  <div class="window app-window">
+    <div class="window-titlebar">
+      <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+      <span class="window-title">рулетка — Finder</span>
+    </div>
+
+    <div class="window-body app-body">
+      <header class="app-header">
+        <div class="app-logo">◆ DAPI</div>
+        <h1>Рулетка</h1>
+        <p class="app-sub">статус: <span class="accent-green">1 бесплатный приз в день</span></p>
+      </header>
+
+      <nav class="app-tabs">
+        <button class="tab active" data-tab="wheel" type="button">Рулетка</button>
+        <button class="tab" data-tab="inventory" type="button">
+          Инвентарь <span class="tab-badge" id="invBadge" hidden>0</span>
+        </button>
+      </nav>
+
+      <section class="tab-panel" id="panel-wheel">
+        <div class="reel" id="reel">
+          <div class="reel-window"></div>
+          <div class="reel-track" id="reelTrack"></div>
+        </div>
+
+        <button class="btn-primary btn-spin" id="spinBtn" type="button">Крутить</button>
+        <p class="spin-hint" id="spinHint">1 бесплатный прокрут каждые 24 часа</p>
+      </section>
+
+      <section class="tab-panel is-hidden" id="panel-inventory">
+        <div class="inventory-list" id="inventoryList"></div>
+        <p class="empty-state" id="emptyState">Пока пусто. Крути рулетку, чтобы получить первый приз.</p>
+      </section>
+    </div>
+  </div>
+
+  <p class="footnote">сделано в стиле <a href="https://permkvadrat59-star.github.io/dapi-team/" target="_blank" rel="noopener">DAPI TEAM</a></p>
+</div>
+
+<div class="win-overlay" id="winOverlay">
+  <div class="win-card">
+    <div class="win-logo">◆ DAPI</div>
+    <span class="win-rarity" id="winRarity">RARE</span>
+    <h2 id="winTitle">+2 часа</h2>
+    <p id="winDesc">Бесплатные 2 часа в следующий визит</p>
+    <div class="win-code-block" id="winCodeBlock">
+      <p class="win-code-label">КОД НАГРАДЫ</p>
+      <div class="win-code" id="winCode">DAPI-XXXX</div>
+      <p class="win-expiry" id="winExpiry">Сгорит через 3 дн. 23 ч.</p>
+    </div>
+    <button class="btn-primary win-close" id="winClose">В инвентарь</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
