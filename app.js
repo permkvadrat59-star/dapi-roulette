@@ -6,11 +6,13 @@ const PRIZES = [
   { id: 'freehour',    title: '+2 часа',        desc: 'Бесплатно в следующий визит',         icon: '⏱️', rarity: 'rare',   weight: 12, ttlHours: 96 },
   { id: 'nightpack',   title: 'Ночной пакет',   desc: 'Бесплатный ночной пакет',             icon: '🌙', rarity: 'epic',   weight: 6,  ttlHours: 120 },
   { id: 'merch',       title: 'Мерч DAPI',      desc: 'Стикерпак команды',                   icon: '◆',  rarity: 'epic',   weight: 4,  ttlHours: 168 },
-  { id: 'again',       title: 'Ещё раз завтра', desc: 'В этот раз не повезло',                icon: '🔁', rarity: 'common', weight: 30, ttlHours: 0 },
+  { id: 'again',       title: 'Не повезло',     desc: 'Отсканируй QR в следующий визит',     icon: '🔁', rarity: 'common', weight: 30, ttlHours: 0 },
 ];
 
-const COOLDOWN_MS = 24 * 60 * 60 * 1000;
-const LS_LAST_SPIN = 'dapi_roulette_last_spin';
+// QR at the venue should link to  <site-url>/?activate=<VENUE_CODE>  — change per client.
+const VENUE_CODE = 'DAPI-DEMO';
+
+const LS_USER = 'dapi_roulette_user';
 const LS_INVENTORY = 'dapi_roulette_inventory';
 
 const CARD_W = 92 + 8; // width + gap, must match .reel-card / .reel-track gap in CSS
@@ -18,10 +20,20 @@ const CYCLES = 12;
 const REST_INDEX = PRIZES.length * 2; // resting position: leaves cards on both sides, not just the track start
 const SPIN_DURATION_MS = 3200;
 
+// ---------- Elements ----------
+const authScreen = document.getElementById('authScreen');
+const appShell = document.getElementById('appShell');
+const authForm = document.getElementById('authForm');
+
+const gateLocked = document.getElementById('gateLocked');
+const gateOccupied = document.getElementById('gateOccupied');
+const gateReady = document.getElementById('gateReady');
+const occupiedItem = document.getElementById('occupiedItem');
+const demoScanBtn = document.getElementById('demoScanBtn');
+
 const reel = document.getElementById('reel');
 const reelTrack = document.getElementById('reelTrack');
 const spinBtn = document.getElementById('spinBtn');
-const spinHint = document.getElementById('spinHint');
 const invBadge = document.getElementById('invBadge');
 const inventoryList = document.getElementById('inventoryList');
 const emptyState = document.getElementById('emptyState');
@@ -35,9 +47,47 @@ const winCode = document.getElementById('winCode');
 const winExpiry = document.getElementById('winExpiry');
 const winClose = document.getElementById('winClose');
 
-let countdownTimer = null;
-let track = [];
+const giftOverlay = document.getElementById('giftOverlay');
+const giftRarity = document.getElementById('giftRarity');
+const giftTitle = document.getElementById('giftTitle');
+const giftDesc = document.getElementById('giftDesc');
+const giftFrom = document.getElementById('giftFrom');
+const giftExpiry = document.getElementById('giftExpiry');
+const giftAccept = document.getElementById('giftAccept');
+const giftDecline = document.getElementById('giftDecline');
 
+const profileAvatar = document.getElementById('profileAvatar');
+const profileName = document.getElementById('profileName');
+const profileId = document.getElementById('profileId');
+const profileSince = document.getElementById('profileSince');
+const logoutBtn = document.getElementById('logoutBtn');
+
+let track = [];
+let qrActivated = false;
+let pendingGift = null;
+
+// ---------- Storage helpers ----------
+function uid() {
+  return (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+}
+function getUser() {
+  try { return JSON.parse(localStorage.getItem(LS_USER)); }
+  catch { return null; }
+}
+function saveUser(user) { localStorage.setItem(LS_USER, JSON.stringify(user)); }
+
+function getInventory() {
+  try { return JSON.parse(localStorage.getItem(LS_INVENTORY)) || []; }
+  catch { return []; }
+}
+function saveInventory(list) { localStorage.setItem(LS_INVENTORY, JSON.stringify(list)); }
+
+function getActiveItem() {
+  const now = Date.now();
+  return getInventory().find(i => !i.used && i.expiresAt > now) || null;
+}
+
+// ---------- Reel ----------
 function shuffled(arr) {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -83,55 +133,6 @@ function genCode() {
   return s;
 }
 
-function getInventory() {
-  try { return JSON.parse(localStorage.getItem(LS_INVENTORY)) || []; }
-  catch { return []; }
-}
-function saveInventory(list) {
-  localStorage.setItem(LS_INVENTORY, JSON.stringify(list));
-}
-
-function getLastSpin() {
-  return Number(localStorage.getItem(LS_LAST_SPIN) || 0);
-}
-function setLastSpin(ts) {
-  localStorage.setItem(LS_LAST_SPIN, String(ts));
-}
-
-function formatRemaining(ms) {
-  const total = Math.max(0, Math.ceil(ms / 1000));
-  const h = String(Math.floor(total / 3600)).padStart(2, '0');
-  const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
-  const s = String(total % 60).padStart(2, '0');
-  return `${h}:${m}:${s}`;
-}
-
-function updateSpinAvailability() {
-  const last = getLastSpin();
-  const remaining = COOLDOWN_MS - (Date.now() - last);
-
-  if (countdownTimer) clearInterval(countdownTimer);
-
-  if (remaining > 0) {
-    spinBtn.disabled = true;
-    spinBtn.textContent = 'Крутить';
-    spinHint.textContent = `Следующий прокрут через ${formatRemaining(remaining)}`;
-    countdownTimer = setInterval(() => {
-      const left = COOLDOWN_MS - (Date.now() - getLastSpin());
-      if (left <= 0) {
-        clearInterval(countdownTimer);
-        updateSpinAvailability();
-      } else {
-        spinHint.textContent = `Следующий прокрут через ${formatRemaining(left)}`;
-      }
-    }, 1000);
-  } else {
-    spinBtn.disabled = false;
-    spinBtn.textContent = 'Крутить';
-    spinHint.textContent = '1 бесплатный прокрут каждые 24 часа';
-  }
-}
-
 function rarityLabel(r) {
   return r === 'epic' ? 'EPIC' : r === 'rare' ? 'RARE' : 'COMMON';
 }
@@ -174,12 +175,12 @@ function spin() {
 }
 
 function handleResult(prize) {
-  const now = Date.now();
-  setLastSpin(now);
+  qrActivated = false; // the QR scan is consumed by this one spin attempt, win or miss
 
   if (prize.id !== 'again') {
+    const now = Date.now();
     const entry = {
-      uid: `${now}-${Math.random().toString(36).slice(2, 8)}`,
+      uid: uid(),
       prizeId: prize.id,
       title: prize.title,
       desc: prize.desc,
@@ -188,6 +189,7 @@ function handleResult(prize) {
       wonAt: now,
       expiresAt: now + prize.ttlHours * 3600 * 1000,
       used: false,
+      gifted: false,
     };
     const inv = getInventory();
     inv.unshift(entry);
@@ -198,7 +200,7 @@ function handleResult(prize) {
     showWin(prize, null);
   }
 
-  updateSpinAvailability();
+  updateGateState();
 }
 
 function showWin(prize, entry) {
@@ -229,65 +231,302 @@ function closeWin() {
   winOverlay.classList.remove('open');
 }
 
+// ---------- Inventory ----------
+function formatExpiry(expiresAt, now) {
+  const msLeft = expiresAt - now;
+  if (msLeft <= 0) return null;
+  const hrs = Math.ceil(msLeft / 3600000);
+  const days = Math.floor(hrs / 24);
+  const restH = hrs % 24;
+  return days > 0 ? `${days} дн. ${restH} ч.` : `${hrs} ч.`;
+}
+
+function invItemHTML(item, now) {
+  const expired = !item.used && item.expiresAt <= now;
+  const active = !item.used && !expired;
+  const statusClass = item.used ? '' : expired ? 'status-expired' : 'status-active';
+  const statusText = item.used ? (item.gifted ? 'Подарено' : 'Использовано') : expired ? 'Истёк' : 'Активен';
+  const expiryLine = active ? `<p class="inv-item-desc">Сгорит через ${formatExpiry(item.expiresAt, now)}</p>` : '';
+
+  return `
+    <div class="inv-item" data-uid="${item.uid}">
+      <div class="inv-item-top">
+        <span class="inv-item-title">${item.title}</span>
+        <span class="inv-rarity rarity-${item.rarity}">${rarityLabel(item.rarity)}</span>
+      </div>
+      <p class="inv-item-desc">${item.desc}</p>
+      <div class="inv-code-row">
+        <span class="inv-code">${item.code}</span>
+        <span class="inv-status ${statusClass}">${statusText}</span>
+      </div>
+      ${expiryLine}
+      ${active ? `
+        <div class="inv-actions">
+          <button class="inv-redeem-btn" data-uid="${item.uid}">Отметить использованным</button>
+          <button class="inv-share-btn" data-uid="${item.uid}">Подарить</button>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
 function renderInventory() {
   const inv = getInventory();
   const now = Date.now();
-  invBadge.hidden = inv.filter(i => !i.used && i.expiresAt > now).length === 0;
-  invBadge.textContent = inv.filter(i => !i.used && i.expiresAt > now).length;
+  const activeCount = inv.filter(i => !i.used && i.expiresAt > now).length;
+  invBadge.hidden = activeCount === 0;
+  invBadge.textContent = activeCount;
 
   emptyState.classList.toggle('is-hidden', inv.length > 0);
-
-  inventoryList.innerHTML = inv.map(item => {
-    const expired = !item.used && item.expiresAt <= now;
-    const statusClass = item.used ? '' : expired ? 'status-expired' : 'status-active';
-    const statusText = item.used ? 'Использовано' : expired ? 'Истёк' : 'Активен';
-    return `
-      <div class="inv-item" data-uid="${item.uid}">
-        <div class="inv-item-top">
-          <span class="inv-item-title">${item.title}</span>
-          <span class="inv-rarity rarity-${item.rarity}">${rarityLabel(item.rarity)}</span>
-        </div>
-        <p class="inv-item-desc">${item.desc}</p>
-        <div class="inv-code-row">
-          <span class="inv-code">${item.code}</span>
-          <span class="inv-status ${statusClass}">${statusText}</span>
-        </div>
-        ${!item.used && !expired ? `<button class="inv-redeem-btn" data-uid="${item.uid}">Отметить использованным</button>` : ''}
-      </div>
-    `;
-  }).join('');
+  inventoryList.innerHTML = inv.map(item => invItemHTML(item, now)).join('');
 }
 
-function redeem(uid) {
+function redeem(itemUid) {
   const inv = getInventory();
-  const item = inv.find(i => i.uid === uid);
+  const item = inv.find(i => i.uid === itemUid);
   if (item) item.used = true;
   saveInventory(inv);
   renderInventory();
+  updateGateState();
+}
+
+// ---------- Gifting ----------
+function buildGiftLink(item) {
+  const payload = {
+    t: item.title, d: item.desc, r: item.rarity, c: item.code,
+    e: item.expiresAt, p: item.prizeId, n: (getUser() || {}).firstName || '',
+  };
+  const encoded = btoa(encodeURIComponent(JSON.stringify(payload)));
+  return `${location.origin}${location.pathname}?gift=${encoded}`;
+}
+
+function markGifted(itemUid) {
+  const inv = getInventory();
+  const item = inv.find(i => i.uid === itemUid);
+  if (item) { item.used = true; item.gifted = true; }
+  saveInventory(inv);
+  renderInventory();
+  updateGateState();
+}
+
+async function shareItem(itemUid) {
+  const inv = getInventory();
+  const item = inv.find(i => i.uid === itemUid);
+  if (!item) return;
+
+  const url = buildGiftLink(item);
+  const text = `Дарю тебе приз из DAPI Roulette: ${item.title}. Открой ссылку и прими подарок 🎁`;
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: 'DAPI Roulette — подарок', text, url });
+      markGifted(itemUid);
+    } catch {
+      // user cancelled the share sheet — keep the prize, nothing was sent
+    }
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(url);
+    alert('Ссылка на подарок скопирована — отправь её другу.');
+    markGifted(itemUid);
+  } catch {
+    window.prompt('Скопируй ссылку вручную и отправь другу:', url);
+    markGifted(itemUid);
+  }
+}
+
+function decodeGift(param) {
+  try {
+    const payload = JSON.parse(decodeURIComponent(atob(param)));
+    if (!payload || !payload.t || !payload.c || !payload.e) return null;
+    if (payload.e <= Date.now()) return null; // already expired
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function showGift(payload) {
+  pendingGift = payload;
+  giftRarity.textContent = rarityLabel(payload.r);
+  giftRarity.className = `win-rarity rarity-${payload.r}`;
+  giftTitle.textContent = payload.t;
+  giftDesc.textContent = payload.d;
+  giftFrom.textContent = payload.n ? `Подарок от ${payload.n}` : 'Тебе подарили приз';
+  const left = formatExpiry(payload.e, Date.now());
+  giftExpiry.textContent = left ? `Сгорит через ${left}` : 'Срок годности истекает';
+  giftOverlay.classList.add('open');
+}
+
+function closeGift() {
+  giftOverlay.classList.remove('open');
+  pendingGift = null;
+  const clean = new URL(location.href);
+  clean.searchParams.delete('gift');
+  history.replaceState({}, '', clean.toString());
+}
+
+function acceptGift() {
+  if (!pendingGift) return;
+  if (getActiveItem()) {
+    alert('У тебя уже есть активный приз — сначала используй или подари его, потом принимай новый.');
+    return;
+  }
+  const now = Date.now();
+  const entry = {
+    uid: uid(),
+    prizeId: pendingGift.p || '',
+    title: pendingGift.t,
+    desc: pendingGift.d,
+    rarity: pendingGift.r,
+    code: pendingGift.c,
+    wonAt: now,
+    expiresAt: pendingGift.e,
+    used: false,
+    gifted: false,
+  };
+  const inv = getInventory();
+  inv.unshift(entry);
+  saveInventory(inv);
+  renderInventory();
+  updateGateState();
+  closeGift();
+}
+
+// ---------- Gate (locked / occupied / ready) ----------
+function updateGateState() {
+  const active = getActiveItem();
+
+  gateLocked.classList.add('is-hidden');
+  gateOccupied.classList.add('is-hidden');
+  gateReady.classList.add('is-hidden');
+
+  if (active) {
+    occupiedItem.innerHTML = invItemHTML(active, Date.now());
+    gateOccupied.classList.remove('is-hidden');
+  } else if (qrActivated) {
+    gateReady.classList.remove('is-hidden');
+    spinBtn.disabled = false;
+    spinBtn.textContent = 'Крутить';
+  } else {
+    gateLocked.classList.remove('is-hidden');
+  }
+}
+
+function tryActivateFromUrl() {
+  const params = new URLSearchParams(location.search);
+  const code = params.get('activate');
+  if (code && code.trim().toUpperCase() === VENUE_CODE.toUpperCase()) {
+    qrActivated = true;
+  }
+  if (params.has('activate')) {
+    const clean = new URL(location.href);
+    clean.searchParams.delete('activate');
+    history.replaceState({}, '', clean.toString());
+  }
+
+  const gift = params.get('gift');
+  if (gift) {
+    const payload = decodeGift(gift);
+    if (payload) showGift(payload);
+    else {
+      const clean = new URL(location.href);
+      clean.searchParams.delete('gift');
+      history.replaceState({}, '', clean.toString());
+    }
+  }
+}
+
+// ---------- Profile ----------
+function renderProfile() {
+  const user = getUser();
+  if (!user) return;
+  const initials = `${(user.firstName || '?')[0] || ''}${(user.lastName || '')[0] || ''}`.toUpperCase();
+  profileAvatar.textContent = initials || '?';
+  profileName.textContent = `${user.firstName} ${user.lastName}`.trim();
+  profileId.textContent = `ID: ${user.id.slice(0, 8)}`;
+  profileSince.textContent = new Date(user.createdAt).toLocaleDateString('ru-RU', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  });
 }
 
 // ---------- Tabs ----------
-document.querySelectorAll('.tab').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    const target = btn.dataset.tab;
-    document.getElementById('panel-wheel').classList.toggle('is-hidden', target !== 'wheel');
-    document.getElementById('panel-inventory').classList.toggle('is-hidden', target !== 'inventory');
-  });
+function switchTab(name) {
+  document.querySelectorAll('.bnav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.getElementById('panel-wheel').classList.toggle('is-hidden', name !== 'wheel');
+  document.getElementById('panel-inventory').classList.toggle('is-hidden', name !== 'inventory');
+  document.getElementById('panel-profile').classList.toggle('is-hidden', name !== 'profile');
+}
+
+document.querySelectorAll('.bnav-item').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+document.querySelectorAll('[data-goto]').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.goto));
 });
 
 inventoryList.addEventListener('click', (e) => {
-  const btn = e.target.closest('.inv-redeem-btn');
-  if (btn) redeem(btn.dataset.uid);
+  const redeemBtn = e.target.closest('.inv-redeem-btn');
+  const shareBtn = e.target.closest('.inv-share-btn');
+  if (redeemBtn) redeem(redeemBtn.dataset.uid);
+  if (shareBtn) shareItem(shareBtn.dataset.uid);
+});
+occupiedItem.addEventListener('click', (e) => {
+  const redeemBtn = e.target.closest('.inv-redeem-btn');
+  const shareBtn = e.target.closest('.inv-share-btn');
+  if (redeemBtn) redeem(redeemBtn.dataset.uid);
+  if (shareBtn) shareItem(shareBtn.dataset.uid);
 });
 
 spinBtn.addEventListener('click', spin);
 winClose.addEventListener('click', closeWin);
 winOverlay.addEventListener('click', (e) => { if (e.target === winOverlay) closeWin(); });
 
+demoScanBtn.addEventListener('click', () => {
+  qrActivated = true;
+  updateGateState();
+});
+
+giftAccept.addEventListener('click', acceptGift);
+giftDecline.addEventListener('click', closeGift);
+giftOverlay.addEventListener('click', (e) => { if (e.target === giftOverlay) closeGift(); });
+
+logoutBtn.addEventListener('click', () => {
+  if (!confirm('Выйти и очистить профиль на этом устройстве?')) return;
+  localStorage.removeItem(LS_USER);
+  localStorage.removeItem(LS_INVENTORY);
+  location.reload();
+});
+
+authForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const firstName = document.getElementById('authFirstName').value.trim();
+  const lastName = document.getElementById('authLastName').value.trim();
+  if (!firstName || !lastName) return;
+  saveUser({ id: uid(), firstName, lastName, createdAt: Date.now() });
+  boot();
+});
+
 // ---------- Init ----------
-buildTrack();
-centerTrackAt(REST_INDEX, false);
-renderInventory();
-updateSpinAvailability();
+function boot() {
+  const user = getUser();
+  if (!user) {
+    authScreen.hidden = false;
+    appShell.hidden = true;
+    return;
+  }
+
+  authScreen.hidden = true;
+  appShell.hidden = false;
+
+  buildTrack();
+  centerTrackAt(REST_INDEX, false);
+  renderProfile();
+  renderInventory();
+  tryActivateFromUrl();
+  updateGateState();
+}
+
+boot();

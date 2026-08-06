@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0b0b0e">
 <title>DAPI · Рулетка</title>
-<meta name="description" content="Рулетка призов от DAPI Team — крути раз в 24 часа, забирай приз.">
+<meta name="description" content="Рулетка призов от DAPI Team — активируй QR-кодом в заведении, крути, забирай приз.">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="icon" href="icons/icon-192.png">
@@ -15,7 +15,36 @@
 </head>
 <body>
 
-<div class="phone-shell">
+<!-- ---------- Auth screen: shown until a local profile exists on this device ---------- -->
+<div class="auth-screen" id="authScreen" hidden>
+  <div class="window auth-window">
+    <div class="window-titlebar">
+      <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+      <span class="window-title">вход — Finder</span>
+    </div>
+    <div class="window-body auth-body">
+      <div class="app-logo">◆ DAPI</div>
+      <h1>Рулетка</h1>
+      <p class="app-sub-lead">Укажи имя — мы запомним тебя на этом телефоне</p>
+
+      <form id="authForm">
+        <label class="field">
+          <span>Имя</span>
+          <input type="text" id="authFirstName" autocomplete="given-name" required>
+        </label>
+        <label class="field">
+          <span>Фамилия</span>
+          <input type="text" id="authLastName" autocomplete="family-name" required>
+        </label>
+        <button type="submit" class="btn-primary">Войти</button>
+      </form>
+      <p class="auth-note">Это черновая регистрация для шаблона: без пароля, профиль привязан к устройству.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- Main app ---------- -->
+<div class="phone-shell" id="appShell" hidden>
   <div class="window app-window">
     <div class="window-titlebar">
       <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
@@ -26,36 +55,67 @@
       <header class="app-header">
         <div class="app-logo">◆ DAPI</div>
         <h1>Рулетка</h1>
-        <p class="app-sub">статус: <span class="accent-green">1 бесплатный приз в день</span></p>
+        <p class="app-sub">статус: <span class="accent-green">активация по QR в заведении</span></p>
       </header>
 
-      <nav class="app-tabs">
-        <button class="tab active" data-tab="wheel" type="button">Рулетка</button>
-        <button class="tab" data-tab="inventory" type="button">
-          Инвентарь <span class="tab-badge" id="invBadge" hidden>0</span>
-        </button>
-      </nav>
-
       <section class="tab-panel" id="panel-wheel">
-        <div class="reel" id="reel">
-          <div class="reel-window"></div>
-          <div class="reel-track" id="reelTrack"></div>
+
+        <div class="gate-card" id="gateLocked">
+          <div class="gate-icon">▢</div>
+          <p class="gate-title">Рулетка заблокирована</p>
+          <p class="gate-text">Найди QR-код на кассе в заведении и наведи на него камеру телефона, чтобы активировать один прокрут.</p>
+          <button class="btn-ghost" id="demoScanBtn" type="button">Демо: сканировать QR</button>
         </div>
 
-        <button class="btn-primary btn-spin" id="spinBtn" type="button">Крутить</button>
-        <p class="spin-hint" id="spinHint">1 бесплатный прокрут каждые 24 часа</p>
+        <div class="gate-card is-hidden" id="gateOccupied">
+          <p class="gate-title">У тебя уже есть приз</p>
+          <p class="gate-text">В инвентаре может храниться только один приз одновременно. Используй его или подари другу, чтобы крутить снова.</p>
+          <div class="inventory-list" id="occupiedItem"></div>
+          <button class="btn-primary" data-goto="inventory" type="button">Открыть инвентарь</button>
+        </div>
+
+        <div class="is-hidden" id="gateReady">
+          <div class="reel" id="reel">
+            <div class="reel-window"></div>
+            <div class="reel-track" id="reelTrack"></div>
+          </div>
+          <button class="btn-primary btn-spin" id="spinBtn" type="button">Крутить</button>
+          <p class="spin-hint">QR отсканирован · 1 попытка</p>
+        </div>
       </section>
 
       <section class="tab-panel is-hidden" id="panel-inventory">
         <div class="inventory-list" id="inventoryList"></div>
-        <p class="empty-state" id="emptyState">Пока пусто. Крути рулетку, чтобы получить первый приз.</p>
+        <p class="empty-state" id="emptyState">Пока пусто. Активируй рулетку по QR, чтобы получить приз.</p>
+      </section>
+
+      <section class="tab-panel is-hidden" id="panel-profile">
+        <div class="profile-card">
+          <div class="profile-avatar" id="profileAvatar">ДА</div>
+          <div class="profile-name" id="profileName">Имя Фамилия</div>
+          <div class="profile-id" id="profileId">ID: —</div>
+        </div>
+        <div class="profile-row">
+          <span>В системе с</span>
+          <span id="profileSince">—</span>
+        </div>
+        <button class="btn-ghost" id="logoutBtn" type="button">Выйти / сменить профиль</button>
       </section>
     </div>
+
+    <nav class="bottom-nav">
+      <button class="bnav-item active" data-tab="wheel" type="button">Рулетка</button>
+      <button class="bnav-item" data-tab="inventory" type="button">
+        Инвентарь <span class="tab-badge" id="invBadge" hidden>0</span>
+      </button>
+      <button class="bnav-item" data-tab="profile" type="button">Профиль</button>
+    </nav>
   </div>
 
   <p class="footnote">сделано в стиле <a href="https://permkvadrat59-star.github.io/dapi-team/" target="_blank" rel="noopener">DAPI TEAM</a></p>
 </div>
 
+<!-- ---------- Win overlay ---------- -->
 <div class="win-overlay" id="winOverlay">
   <div class="win-card">
     <div class="win-logo">◆ DAPI</div>
@@ -68,6 +128,20 @@
       <p class="win-expiry" id="winExpiry">Сгорит через 3 дн. 23 ч.</p>
     </div>
     <button class="btn-primary win-close" id="winClose">В инвентарь</button>
+  </div>
+</div>
+
+<!-- ---------- Gift-received overlay ---------- -->
+<div class="win-overlay" id="giftOverlay">
+  <div class="win-card">
+    <div class="win-logo">◆ DAPI · ПОДАРОК</div>
+    <span class="win-rarity" id="giftRarity">RARE</span>
+    <h2 id="giftTitle">+2 часа</h2>
+    <p id="giftDesc">Бесплатные 2 часа в следующий визит</p>
+    <p class="gift-from" id="giftFrom">Подарок от друга</p>
+    <p class="win-expiry" id="giftExpiry">Сгорит через 3 дн. 23 ч.</p>
+    <button class="btn-primary" id="giftAccept">Принять в инвентарь</button>
+    <button class="btn-ghost" id="giftDecline" type="button">Не сейчас</button>
   </div>
 </div>
 
