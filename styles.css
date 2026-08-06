@@ -19,18 +19,24 @@
 
 html, body {
   height: 100%;
+  background: var(--bg); /* avoids a white flash on iOS overscroll bounce */
+  overscroll-behavior-y: none;
 }
 
 body {
   margin: 0;
-  background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
   -webkit-font-smoothing: antialiased;
-  overscroll-behavior-y: none;
 }
 
 a { color: inherit; }
+
+button, .bnav-item, .tab, [data-goto] {
+  touch-action: manipulation; /* removes the ~300ms tap delay on older mobile browsers */
+  -webkit-user-select: none;
+  user-select: none;
+}
 
 .is-hidden, [hidden] { display: none !important; }
 
@@ -138,7 +144,7 @@ a { color: inherit; }
   padding: 0.7rem 0.8rem;
   color: var(--text);
   font-family: var(--sans);
-  font-size: 0.92rem;
+  font-size: 1rem; /* iOS Safari zooms in on focus for inputs under 16px */
 }
 .field input:focus {
   outline: none;
@@ -485,6 +491,63 @@ a { color: inherit; }
   margin: 0 0 1.1rem;
 }
 #giftDecline { margin-top: 0.6rem; }
+
+/* ---------- Full-bleed app shell on phones ---------- */
+/* Below this width the "window" stops being a floating card and becomes the
+   real app surface: edge to edge, header pinned top, nav pinned bottom, only
+   the middle content scrolls — the way an installed app actually behaves. */
+@media (max-width: 520px) {
+  .phone-shell, .auth-screen {
+    height: 100dvh;
+    padding: 0;
+    gap: 0;
+    justify-content: flex-start;
+  }
+
+  .window {
+    max-width: none;
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .window-titlebar {
+    flex: 0 0 auto;
+    padding-top: max(0.7rem, env(safe-area-inset-top));
+  }
+
+  .app-window .window-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-window .bottom-nav {
+    flex: 0 0 auto;
+  }
+
+  .auth-window .window-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .footnote {
+    flex: 0 0 auto;
+    text-align: center;
+    padding: 0.55rem 1rem max(0.55rem, env(safe-area-inset-bottom));
+  }
+}
 
 @media (max-width: 380px) {
   .reel-window { width: 84px; margin-left: -42px; }

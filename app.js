@@ -137,10 +137,15 @@ function rarityLabel(r) {
   return r === 'epic' ? 'EPIC' : r === 'rare' ? 'RARE' : 'COMMON';
 }
 
+function vibrate(pattern) {
+  if (navigator.vibrate) navigator.vibrate(pattern); // no-op on iOS Safari, fine
+}
+
 function spin() {
   if (spinBtn.disabled) return;
   spinBtn.disabled = true;
   spinBtn.textContent = 'Крутим...';
+  vibrate(15);
 
   const prize = pickWeighted();
 
@@ -195,8 +200,10 @@ function handleResult(prize) {
     inv.unshift(entry);
     saveInventory(inv);
     renderInventory();
+    vibrate(prize.rarity === 'epic' ? [30, 60, 30, 60, 60] : [30, 60, 30]);
     showWin(prize, entry);
   } else {
+    vibrate(20);
     showWin(prize, null);
   }
 
